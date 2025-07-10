@@ -1120,6 +1120,7 @@ ngx_http_vod_hls_create_loc_conf(
 	conf->m3u8_config.output_iframes_playlist = NGX_CONF_UNSET;
 	conf->m3u8_config.force_unmuxed_segments = NGX_CONF_UNSET;
 	conf->m3u8_config.container_format = NGX_CONF_UNSET_UINT;
+	conf->m3u8_config.include_bitrate_in_names = NGX_CONF_UNSET;
 }
 
 static char *
@@ -1134,6 +1135,7 @@ ngx_http_vod_hls_merge_loc_conf(
 	ngx_conf_merge_value(conf->absolute_iframe_urls, prev->absolute_iframe_urls, 0);
 	ngx_conf_merge_value(conf->output_iv, prev->output_iv, 0);
 	ngx_conf_merge_value(conf->m3u8_config.output_iframes_playlist, prev->m3u8_config.output_iframes_playlist, 1);
+	ngx_conf_merge_value(conf->m3u8_config.include_bitrate_in_names, prev->m3u8_config.include_bitrate_in_names, 0);
 
 	ngx_conf_merge_str_value(conf->master_file_name_prefix, prev->master_file_name_prefix, "master");
 	ngx_conf_merge_str_value(conf->m3u8_config.index_file_name_prefix, prev->m3u8_config.index_file_name_prefix, "index");

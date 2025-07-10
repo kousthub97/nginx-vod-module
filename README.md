@@ -1476,20 +1476,17 @@ The name of the MP4 initialization file (an mp4 extension is implied).
 
 #### vod_dash_fragment_file_name_prefix
 * **syntax**: `vod_dash_fragment_file_name_prefix name`
-* **default**: `frag`
+* **default**: `fragment`
 * **context**: `http`, `server`, `location`
 
-The name of the fragment files (an m4s extension is implied).
+The prefix of fragment file names.
 
-#### vod_dash_manifest_format
-* **syntax**: `vod_dash_manifest_format format`
-* **default**: `segmenttimeline`
+#### vod_dash_include_bitrate_in_names
+* **syntax**: `vod_dash_include_bitrate_in_names on | off`
+* **default**: `off`
 * **context**: `http`, `server`, `location`
 
-Sets the MPD format, available options are:
-* `segmentlist` - uses SegmentList and SegmentURL tags, in this format the URL of each fragment is explicitly set in the MPD
-* `segmenttemplate` - uses SegmentTemplate, reporting a single duration for all fragments
-* `segmenttimeline` - uses SegmentTemplate and SegmentTimeline to explicitly set the duration of the fragments
+When enabled, includes the bitrate in DASH fragment file names. The segment template becomes `fragment-$Number$-b<bitrate>-$RepresentationID$.m4s`.
 
 #### vod_dash_subtitle_format
 * **syntax**: `vod_dash_subtitle_format format`
@@ -1634,6 +1631,13 @@ The name of the HLS I-frames playlist file (an m3u8 extension is implied).
 * **context**: `http`, `server`, `location`
 
 The prefix of segment file names, the actual file name is `seg-<index>-v<video-track-index>-a<audio-track-index>.ts`.
+
+#### vod_hls_include_bitrate_in_names
+* **syntax**: `vod_hls_include_bitrate_in_names on | off`
+* **default**: `off`
+* **context**: `http`, `server`, `location`
+
+When enabled, includes the bitrate in HLS segment file names. The actual file name becomes `seg-<index>-b<bitrate>-v<video-track-index>-a<audio-track-index>.ts`.
 
 #### vod_hls_init_file_name_prefix
 * **syntax**: `vod_hls_init_file_name_prefix name`
