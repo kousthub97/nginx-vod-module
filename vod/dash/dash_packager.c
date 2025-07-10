@@ -422,6 +422,7 @@ dash_packager_write_segment_template(
 	vod_str_t* base_url)
 {
 	u_char index_shift_str[MAX_INDEX_SHIFT_LENGTH];
+	u_char bitrate_str[64];
 
 	index_shift_str[0] = '\0';
 	if (media_set->use_discontinuity)
@@ -437,20 +438,47 @@ dash_packager_write_segment_template(
 		start_number = 0;
 	}
 
+	bitrate_str[0] = '\0';
+	if (conf->include_bitrate_in_names && reference_track->media_info.bitrate > 0) {
+		vod_sprintf(bitrate_str, "b%uD-%Z", reference_track->media_info.bitrate);
+	}
+
 	// Note: SegmentTemplate is currently printed in the adaptation set level, so it is not possible
 	//		to mix mp4 and webm representations for the same media type
-	p = vod_sprintf(p,
-		VOD_DASH_MANIFEST_SEGMENT_TEMPLATE_FIXED,
-		base_url,
-		&conf->fragment_file_name_prefix,
-		index_shift_str,
-		&dash_codecs[reference_track->media_info.codec_id].frag_file_ext,
-		base_url,
-		&conf->init_file_name_prefix,
-		clip_spec,
-		&dash_codecs[reference_track->media_info.codec_id].init_file_ext,
-		media_set->segmenter_conf->segment_duration,
-		start_number + 1);
+	if (conf->include_bitrate_in_names && reference_track->media_info.bitrate > 0) {
+		p = vod_sprintf(p,
+			"        <SegmentTemplate\n"
+			"            timescale=\"1000\"\n"
+			"            media=\"%V%V-$Number$-%s%s$RepresentationID$.%V\"\n"
+			"            initialization=\"%V%V-%s$RepresentationID$.%V\"\n"
+			"            duration=\"%ui\"\n"
+			"            startNumber=\"%uD\">\n"
+			"        </SegmentTemplate>\n",
+			base_url,
+			&conf->fragment_file_name_prefix,
+			index_shift_str,
+			bitrate_str,
+			&dash_codecs[reference_track->media_info.codec_id].frag_file_ext,
+			base_url,
+			&conf->init_file_name_prefix,
+			clip_spec,
+			&dash_codecs[reference_track->media_info.codec_id].init_file_ext,
+			media_set->segmenter_conf->segment_duration,
+			start_number + 1);
+	} else {
+		p = vod_sprintf(p,
+			VOD_DASH_MANIFEST_SEGMENT_TEMPLATE_FIXED,
+			base_url,
+			&conf->fragment_file_name_prefix,
+			index_shift_str,
+			&dash_codecs[reference_track->media_info.codec_id].frag_file_ext,
+			base_url,
+			&conf->init_file_name_prefix,
+			clip_spec,
+			&dash_codecs[reference_track->media_info.codec_id].init_file_ext,
+			media_set->segmenter_conf->segment_duration,
+			start_number + 1);
+	}
 
 	return p;
 }
@@ -472,6 +500,7 @@ dash_packager_write_segment_timeline(
 	uint64_t start_time;
 	uint32_t duration;
 	bool_t first_time = TRUE;
+	u_char bitrate_str[64];
 
 	if (segment_durations->start_time > clip_start_time)
 	{
@@ -482,18 +511,42 @@ dash_packager_write_segment_timeline(
 		start_time = 0;
 	}
 
+	bitrate_str[0] = '\0';
+	if (conf->include_bitrate_in_names && reference_track->media_info.bitrate > 0) {
+		vod_sprintf(bitrate_str, "b%uD-%Z", reference_track->media_info.bitrate);
+	}
+
 	// Note: SegmentTemplate is currently printed in the adaptation set level, so it is not possible
 	//		to mix mp4 and webm representations for the same media type
-	p = vod_sprintf(p,
-		VOD_DASH_MANIFEST_SEGMENT_TEMPLATE_HEADER,
-		base_url,
-		&conf->fragment_file_name_prefix,
-		&dash_codecs[reference_track->media_info.codec_id].frag_file_ext,
-		base_url,
-		&conf->init_file_name_prefix,
-		clip_spec,
-		&dash_codecs[reference_track->media_info.codec_id].init_file_ext,
-		start_number + 1);
+	if (conf->include_bitrate_in_names && reference_track->media_info.bitrate > 0) {
+		p = vod_sprintf(p,
+			"        <SegmentTemplate\n"
+			"            timescale=\"1000\"\n"
+			"            media=\"%V%V-$Number$-%s$RepresentationID$.%V\"\n"
+			"            initialization=\"%V%V-%s$RepresentationID$.%V\"\n"
+			"            startNumber=\"%uD\">\n"
+			"            <SegmentTimeline>\n",
+			base_url,
+			&conf->fragment_file_name_prefix,
+			bitrate_str,
+			&dash_codecs[reference_track->media_info.codec_id].frag_file_ext,
+			base_url,
+			&conf->init_file_name_prefix,
+			clip_spec,
+			&dash_codecs[reference_track->media_info.codec_id].init_file_ext,
+			start_number + 1);
+	} else {
+		p = vod_sprintf(p,
+			VOD_DASH_MANIFEST_SEGMENT_TEMPLATE_HEADER,
+			base_url,
+			&conf->fragment_file_name_prefix,
+			&dash_codecs[reference_track->media_info.codec_id].frag_file_ext,
+			base_url,
+			&conf->init_file_name_prefix,
+			clip_spec,
+			&dash_codecs[reference_track->media_info.codec_id].init_file_ext,
+			start_number + 1);
+	}
 
 	for (cur_item = *cur_item_ptr; cur_item < last_item; cur_item++)
 	{
@@ -503,34 +556,38 @@ dash_packager_write_segment_timeline(
 			break;
 		}
 
-		duration = (uint32_t)rescale_time(cur_item->duration, segment_durations->timescale, 1000);
+		first_time = FALSE;
 
-		if (first_time && start_time != 0)
+		duration = dash_rescale_millis(cur_item->duration);
+
+		// write the segment element
+		if (cur_item->repeat_count == 1)
 		{
-			// output the time
-			if (cur_item->repeat_count == 1)
+			if (start_time != 0)
 			{
 				p = vod_sprintf(p, VOD_DASH_MANIFEST_SEGMENT_TIME, start_time, duration);
 			}
-			else if (cur_item->repeat_count > 1)
+			else
 			{
-				p = vod_sprintf(p, VOD_DASH_MANIFEST_SEGMENT_REPEAT_TIME, start_time, duration, cur_item->repeat_count - 1);
+				p = vod_sprintf(p, VOD_DASH_MANIFEST_SEGMENT, duration);
 			}
 		}
 		else
 		{
-			// don't output the time
-			if (cur_item->repeat_count == 1)
+			if (start_time != 0)
 			{
-				p = vod_sprintf(p, VOD_DASH_MANIFEST_SEGMENT, duration);
+				p = vod_sprintf(p, VOD_DASH_MANIFEST_SEGMENT_REPEAT_TIME, start_time, duration, cur_item->repeat_count - 1);
 			}
-			else if (cur_item->repeat_count > 1)
+			else
 			{
 				p = vod_sprintf(p, VOD_DASH_MANIFEST_SEGMENT_REPEAT, duration, cur_item->repeat_count - 1);
 			}
 		}
 
-		first_time = FALSE;
+		if (start_time != 0)
+		{
+			start_time = 0;		// write the time only for the first segment
+		}
 	}
 
 	*cur_item_ptr = cur_item;

@@ -34,15 +34,12 @@ typedef struct {
 } tags_writer_t;
 
 typedef struct {
-	vod_str_t profiles;
-	vod_str_t init_file_name_prefix;
 	vod_str_t fragment_file_name_prefix;
-	vod_str_t subtitle_file_name_prefix;
-	vod_uint_t manifest_format;
-	vod_uint_t subtitle_format;
+	vod_str_t init_file_name_prefix;
+	manifest_format_t manifest_format;
 	vod_uint_t duplicate_bitrate_threshold;
-	bool_t write_playready_kid;		// TODO: remove
-	bool_t use_base_url_tag;		// TODO: remove - if supported by all devices, always use BaseURL
+	bool_t output_iop_compliant_dashif;
+	ngx_flag_t include_bitrate_in_names;
 } dash_manifest_config_t;
 
 typedef struct {

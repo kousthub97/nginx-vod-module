@@ -1,0 +1,20 @@
+{
+  "sequences": [
+    {
+      "clips": [
+        {
+          "type": "source",
+          "path": "/path/to/video_720p.mp4"
+        }
+      ],
+      "bitrate": {
+        "v": 1200000,
+        "a": 128000
+      }
+    }
+  ],
+  "durations": [
+    30000
+  ],
+  "discontinuities": []
+}

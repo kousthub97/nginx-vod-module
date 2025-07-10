@@ -540,6 +540,7 @@ ngx_http_vod_dash_create_loc_conf(
 	conf->mpd_config.duplicate_bitrate_threshold = NGX_CONF_UNSET_UINT;
 	conf->mpd_config.write_playready_kid = NGX_CONF_UNSET;
 	conf->mpd_config.use_base_url_tag = NGX_CONF_UNSET;
+	conf->mpd_config.include_bitrate_in_names = NGX_CONF_UNSET;
 }
 
 static char *
@@ -562,6 +563,7 @@ ngx_http_vod_dash_merge_loc_conf(
 	ngx_conf_merge_uint_value(conf->mpd_config.duplicate_bitrate_threshold, prev->mpd_config.duplicate_bitrate_threshold, 4096);
 	ngx_conf_merge_value(conf->mpd_config.write_playready_kid, prev->mpd_config.write_playready_kid, 0);
 	ngx_conf_merge_value(conf->mpd_config.use_base_url_tag, prev->mpd_config.use_base_url_tag, 0);
+	ngx_conf_merge_value(conf->mpd_config.include_bitrate_in_names, prev->mpd_config.include_bitrate_in_names, 0);
 
 	return NGX_CONF_OK;
 }

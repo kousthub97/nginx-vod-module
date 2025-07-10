@@ -131,6 +131,26 @@ m3u8_builder_append_segment_name(
 }
 
 static u_char*
+m3u8_builder_append_segment_name_with_bitrate(
+	u_char* p, 
+	vod_str_t* base_url,
+	vod_str_t* segment_file_name_prefix, 
+	uint32_t segment_index, 
+	uint32_t bitrate,
+	vod_str_t* suffix)
+{
+	p = vod_copy(p, base_url->data, base_url->len);
+	p = vod_copy(p, segment_file_name_prefix->data, segment_file_name_prefix->len);
+	*p++ = '-';
+	p = vod_sprintf(p, "%uD", segment_index + 1);
+	if (bitrate > 0) {
+		p = vod_sprintf(p, "-b%uD", bitrate);
+	}
+	p = vod_copy(p, suffix->data, suffix->len);
+	return p;
+}
+
+static u_char*
 m3u8_builder_append_extinf_tag(u_char* p, uint32_t duration, uint32_t scale)
 {
 	p = vod_copy(p, "#EXTINF:", sizeof("#EXTINF:") - 1);
@@ -412,11 +432,23 @@ m3u8_builder_build_index_playlist(
 	size_t result_size;
 	vod_status_t rc;
 	u_char* p;
+	uint32_t bitrate = 0;
 
 #if (NGX_HAVE_OPENSSL_EVP)
 	vod_str_t base64;
 	vod_str_t psshs;
 #endif // NGX_HAVE_OPENSSL_EVP
+
+	// Get bitrate for naming if configured
+	if (conf->include_bitrate_in_names && media_set->sequences_count > 0) {
+		media_sequence_t* sequence = &media_set->sequences[0];
+		if (sequence->filtered_clips_count > 0) {
+			media_clip_t* clip = &sequence->filtered_clips[0];
+			if (clip->first_track != NULL) {
+				bitrate = clip->first_track->media_info.bitrate;
+			}
+		}
+	}
 
 	// build the required tracks string
 	if (media_set->track_count[MEDIA_TYPE_VIDEO] != 0 || media_set->track_count[MEDIA_TYPE_AUDIO] != 0)
@@ -467,7 +499,13 @@ m3u8_builder_build_index_playlist(
 	duration_millis = segment_durations.duration;
 	last_segment_index = last_item[-1].segment_index + last_item[-1].repeat_count;
 	segment_length = sizeof("#EXTINF:.000,\n") - 1 + vod_get_int_print_len(vod_div_ceil(duration_millis, 1000)) +
-		segments_base_url->len + conf->segment_file_name_prefix.len + 1 + vod_get_int_print_len(last_segment_index) + name_suffix.len;
+		segments_base_url->len + conf->segment_file_name_prefix.len + 1 + vod_get_int_print_len(last_segment_index);
+	
+	if (conf->include_bitrate_in_names && bitrate > 0) {
+		segment_length += sizeof("-b") - 1 + vod_get_int_print_len(bitrate);
+	}
+	
+	segment_length += name_suffix.len;
 
 	result_size =
 		sizeof(M3U8_HEADER_PART1) + VOD_INT64_LEN +
@@ -499,31 +537,40 @@ m3u8_builder_build_index_playlist(
 #if (NGX_HAVE_OPENSSL_EVP)
 		else if (encryption_params->type == HLS_ENC_SAMPLE_AES_CENC)
 		{
-			rc = m3u8_builder_write_psshs(
-				request_context,
-				media_set->sequences[0].drm_info,
-				&psshs);
-			if (rc != VOD_OK)
+			if (media_set->sequences[0].drm_info != NULL)
 			{
-				return rc;
-			}
+				rc = m3u8_builder_write_psshs(
+					request_context,
+					media_set->sequences[0].drm_info,
+					&psshs);
+				if (rc != VOD_OK)
+				{
+					return rc;
+				}
 
-			result_size += sizeof(sample_aes_cenc_uri_prefix) + vod_base64_encoded_length(psshs.len);
+				base64.len = vod_base64_encoded_length(psshs.len);
+				base64.data = vod_alloc(request_context->pool, base64.len);
+				if (base64.data == NULL)
+				{
+					vod_log_debug0(VOD_LOG_DEBUG_LEVEL, request_context->log, 0,
+						"m3u8_builder_build_index_playlist: vod_alloc failed (2)");
+					return VOD_ALLOC_FAILED;
+				}
+
+				vod_encode_base64(&base64, &psshs);
+
+				result_size += sizeof(sample_aes_cenc_uri_prefix) - 1 + base64.len;
+			}
 		}
 #endif // NGX_HAVE_OPENSSL_EVP
 		else
 		{
-			result_size += base_url->len +
-				conf->encryption_key_file_name.len +
-				sizeof("-f") - 1 + VOD_INT32_LEN +
-				sizeof(encryption_key_extension) - 1;
+			result_size += base_url->len + conf->segment_file_name_prefix.len + sizeof(encryption_key_extension) - 1;
 		}
 
 		if (encryption_params->return_iv)
 		{
-			result_size +=
-				sizeof(encryption_key_tag_iv) - 1 +
-				sizeof(encryption_params->iv_buf) * 2;
+			result_size += sizeof(encryption_key_tag_iv) - 1 + 2 * AES_BLOCK_SIZE;
 		}
 
 		if (conf->encryption_key_format.len != 0)
@@ -710,14 +757,22 @@ m3u8_builder_build_index_playlist(
 		extinf.data = p;
 		p = m3u8_builder_append_extinf_tag(p, rescale_time(cur_item->duration, segment_durations.timescale, scale), scale);
 		extinf.len = p - extinf.data;
-		p = m3u8_builder_append_segment_name(p, segments_base_url, &conf->segment_file_name_prefix, segment_index, &name_suffix);
+		if (conf->include_bitrate_in_names && bitrate > 0) {
+			p = m3u8_builder_append_segment_name_with_bitrate(p, segments_base_url, &conf->segment_file_name_prefix, segment_index, bitrate, &name_suffix);
+		} else {
+			p = m3u8_builder_append_segment_name(p, segments_base_url, &conf->segment_file_name_prefix, segment_index, &name_suffix);
+		}
 		segment_index++;
 
 		// write any additional segments
 		for (; segment_index < last_segment_index; segment_index++)
 		{
 			p = vod_copy(p, extinf.data, extinf.len);
-			p = m3u8_builder_append_segment_name(p, segments_base_url, &conf->segment_file_name_prefix, segment_index, &name_suffix);
+			if (conf->include_bitrate_in_names && bitrate > 0) {
+				p = m3u8_builder_append_segment_name_with_bitrate(p, segments_base_url, &conf->segment_file_name_prefix, segment_index, bitrate, &name_suffix);
+			} else {
+				p = m3u8_builder_append_segment_name(p, segments_base_url, &conf->segment_file_name_prefix, segment_index, &name_suffix);
+			}
 		}
 	}
 
