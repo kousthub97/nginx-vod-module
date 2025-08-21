@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>HLS Frame Stepping Debug (Live Safe)</title>
+  <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+  <style>
+    body { font-family: sans-serif; text-align: center; background-color: #f4f4f4; }
+    h2 { margin-top: 20px; }
+    #controls { margin-top: 15px; }
+    button { padding: 12px 24px; font-size: 18px; margin: 10px; cursor: pointer; }
+    .video-js { width: 1280px; height: 720px; margin: 0 auto; }
+    #debug { margin-top: 20px; font-family: monospace; color: #333; white-space: pre; text-align: left; display: inline-block; }
+  </style>
+</head>
+<body>
+
+  <h2>HLS Player with Frame Stepping & Live DVR Safe Mode</h2>
+
+  <video
+    id="my-video"
+    class="video-js vjs-default-skin"
+    controls
+    preload="auto"
+    data-setup='{}'
+  >
+    <source src="http://10.206.16.13:443/live/hls/testgk1/index.m3u8" type="application/x-mpegURL" />
+  </video>
+
+  <div id="controls">
+    <button id="prev-frame">⏪ Previous Frame</button>
+    <button id="next-frame">⏩ Next Frame</button>
+    <button id="snap">🎯 Snap to Nearest Frame</button>
+  </div>
+
+  <div id="debug">
+    <strong>Debug:</strong> <span id="debug-info">Waiting...</span>
+  </div>
+
+  <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+  <script>
+    // Enable VHS debug logs
+    videojs.Vhs.xhr.beforeRequest = function (options) {
+      console.log("XHR Request:", options.uri);
+      return options;
+    };
+    videojs.log.level('debug');
+
+    const FRAME_RATE = 25; // change for your stream
+    const FRAME_DURATION = 1 / FRAME_RATE;
+
+    const roundToFrame = (time) => {
+      const rounded = Math.round(time / FRAME_DURATION) * FRAME_DURATION;
+      return parseFloat(rounded.toFixed(5));
+    };
+
+    const player = videojs('my-video', {}, function() {
+      console.log("✅ Player is ready");
+      const videoEl = this.tech_.el_;
+
+      const getBufferDuration = () => {
+        const buffered = player.buffered();
+        const current = player.currentTime();
+        if (buffered.length > 0) {
+          const end = buffered.end(buffered.length - 1);
+          return Math.max(0, end - current);
+        }
+        return 0;
+      };
+
+      const getSeekableRange = () => {
+        const seekable = player.seekable();
+        if (seekable.length > 0) {
+          return { start: seekable.start(0), end: seekable.end(0) };
+        }
+        return { start: 0, end: 0 };
+      };
+
+      const logPTS = () => {
+        if (videoEl) {
+          const pts = videoEl.currentTime;
+          console.log(`🎯 PTS of displayed frame: ${pts.toFixed(6)} seconds`);
+        }
+      };
+
+      const updateDebugInfo = () => {
+        const current = player.currentTime();
+        const paused = player.paused();
+        const bufferDur = getBufferDuration();
+        const seekRange = getSeekableRange();
+        const info =
+`currentTime = ${current.toFixed(5)}s
+paused      = ${paused}
+buffered    = ${bufferDur.toFixed(3)}s ahead
+seekable    = ${seekRange.start.toFixed(3)}s → ${seekRange.end.toFixed(3)}s`;
+        document.getElementById('debug-info').innerText = "\n" + info;
+        console.log(info);
+      };
+
+      const stepFrame = (direction) => {
+        const seekRange = getSeekableRange();
+        let currentTime = player.currentTime();
+        let newTime = currentTime + (direction * FRAME_DURATION);
+
+        // clamp to live seekable window
+        if (newTime < seekRange.start) newTime = seekRange.start;
+        if (newTime > seekRange.end) newTime = seekRange.end;
+
+        const roundedTime = roundToFrame(newTime);
+        player.currentTime(roundedTime);
+
+        player.one('seeked', () => {
+          logPTS();
+          updateDebugInfo();
+        });
+      };
+
+      // Button handlers
+      document.getElementById('next-frame').addEventListener('click', () => stepFrame(1));
+      document.getElementById('prev-frame').addEventListener('click', () => stepFrame(-1));
+      document.getElementById('snap').addEventListener('click', () => {
+        const current = player.currentTime();
+        const snapped = roundToFrame(current);
+        player.currentTime(snapped);
+        player.one('seeked', () => {
+          console.log(`Snapped from ${current.toFixed(5)}s to ${snapped}s`);
+          logPTS();
+          updateDebugInfo();
+        });
+      });
+
+      // Snap to frame on pause
+      player.on('pause', () => {
+        const current = player.currentTime();
+        const snapped = roundToFrame(current);
+        if (Math.abs(current - snapped) > 0.00001) {
+          player.currentTime(snapped);
+          console.log(`Paused → snapping from ${current.toFixed(5)}s to ${snapped}s`);
+        } else {
+          console.log(`Paused at ${snapped}s (already aligned)`);
+        }
+      });
+
+      // Update debug info on key events
+      player.on('timeupdate', updateDebugInfo);
+      player.on('progress', updateDebugInfo);
+      player.on('loadedmetadata', updateDebugInfo);
+    });
+  </script>
+
+</body>
+</html>
